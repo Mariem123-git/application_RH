@@ -192,12 +192,6 @@ def run(df):
 
             st.plotly_chart(fig, use_container_width=True)
 
-            # Tableau récapitulatif sous le graphique
-            st.markdown("""
-                <div style="margin-top: 20px;">
-                    <h4 style="color: #2c3e50; text-align: center;">📋 Tableau Récapitulatif</h4>
-                </div>
-                """, unsafe_allow_html=True)
 
 
 
