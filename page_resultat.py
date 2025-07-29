@@ -210,19 +210,6 @@ def run(df):
                  </div>
                  ''', unsafe_allow_html=True)
 
-    # ✅ Tableau des salaires < 3000 DH
-    if 'Salaire net à payer' in df.columns:
-        salaire_data = pd.to_numeric(df['Salaire net à payer'], errors='coerce')
-        df_faibles_salaires = df[salaire_data < 3000].copy()
-
-        if not df_faibles_salaires.empty:
-            st.subheader("⚠️ Employés avec salaire net < 3000 DH (SMIC)")
-            cols_affichage = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Salaire net à payer']
-            cols_existants = [c for c in cols_affichage if c in df_faibles_salaires.columns]
-            st.dataframe(df_faibles_salaires[cols_existants], use_container_width=True, height=300)
-
-            st.warning(f"⚠️ {len(df_faibles_salaires)} employé(s) ont un salaire net inférieur au SMIC (3000 DH)")
-
     # ✅ Liste des salariés concernés par avances et prêts
     cols_affichage = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Avance s/salaire', 'Rbst Prêt',
                       'Salaire net à payer']
@@ -421,6 +408,19 @@ def run(df):
             st.pyplot(fig_hist_net)
             fig_hist_net.savefig(img_hist_net, format='png', dpi=300, bbox_inches='tight')
             plt.close(fig_hist_net)
+
+    # ✅ Tableau des salaires < 3000 DH
+    if 'Salaire net à payer' in df.columns:
+        salaire_data = pd.to_numeric(df['Salaire net à payer'], errors='coerce')
+        df_faibles_salaires = df[salaire_data < 3000].copy()
+
+        if not df_faibles_salaires.empty:
+            st.subheader("⚠️ Employés avec salaire net < 3000 DH")
+            cols_affichage = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Salaire net à payer']
+            cols_existants = [c for c in cols_affichage if c in df_faibles_salaires.columns]
+            st.dataframe(df_faibles_salaires[cols_existants], use_container_width=True, height=300)
+
+            st.warning(f"⚠️ {len(df_faibles_salaires)} employé(s) ont un salaire net <3000 DH")
 
     # === 4. HISTOGRAMME SALAIRE BRUT EN FONCTION DE L'EFFECTIF ===
     img_hist_brut = io.BytesIO()
