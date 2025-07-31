@@ -67,6 +67,10 @@ def run(df, xls, uploaded_file):
                 background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
             }
 
+            .card-custom {
+                background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%);
+            }
+
             /* Section header pour la paie */
             .paie-section-header {
                 background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
@@ -124,6 +128,16 @@ def run(df, xls, uploaded_file):
                 margin: 15px 0;
                 font-weight: bold;
             }
+
+            .custom-success {
+                background: linear-gradient(135deg, #00b894 0%, #00a085 100%);
+                color: white;
+                padding: 15px;
+                border-radius: 10px;
+                border-left: 5px solid #00a085;
+                margin: 15px 0;
+                font-weight: bold;
+            }
         </style>
         """, unsafe_allow_html=True)
 
@@ -137,25 +151,93 @@ def run(df, xls, uploaded_file):
         # Nettoyer : supprimer la dernière ligne souvent vide
         df = df.iloc[:-1, :]
 
-        # Convertir les colonnes à valeurs numériques (sécurisé)
-        primes_cols = ['Salaire des HS', 'Prime de rendement', "Prime d'ancienneté", 'Prime de poste']
-        for col in primes_cols:
+        # ===== NOUVELLE FONCTIONNALITÉ : DÉTECTION AUTOMATIQUE =====
+        def detect_numeric_columns(df):
+            """Détecte toutes les colonnes numériques dans le DataFrame"""
+            numeric_cols = []
+
+            # Colonnes à exclure de la détection automatique (colonnes non monétaires)
+            excluded_cols = [
+                'Noms & Prénoms', 'Matricule', 'N° CIN', 'N° CNSS', 'Code',
+                'Nbre Jours', 'Heures suppl', 'Jours d\'absences', 'Section',
+                'Date d\'embauche', 'Date de naissance', 'Situation familiale',
+                'Nombre d\'enfants', 'Niveau d\'études', 'Fonction'
+            ]
+
+            for col in df.columns:
+                if col not in excluded_cols:
+                    # Tenter de convertir en numérique
+                    try:
+                        numeric_series = pd.to_numeric(df[col], errors='coerce')
+                        # Vérifier s'il y a AU MOINS UNE valeur numérique valide (même si la colonne est partiellement vide)
+                        valid_count = numeric_series.notna().sum()
+
+                        if valid_count > 0:  # Au moins une valeur numérique trouvée
+                            # Si toutes les valeurs valides sont 0, on l'inclut quand même
+                            # Si il y a des valeurs > 0, on vérifie le ratio (plus souple)
+                            positive_count = (numeric_series > 0).sum()
+
+                            # Conditions d'inclusion plus souples :
+                            # 1. Si toutes les valeurs sont 0 ou NaN (colonne vide/zéro) -> INCLURE
+                            # 2. Si au moins 5% des valeurs valides sont positives -> INCLURE
+                            # 3. Si moins de 5 valeurs valides, inclure automatiquement -> INCLURE
+                            if (positive_count == 0) or (positive_count / valid_count >= 0.05) or (valid_count <= 5):
+                                numeric_cols.append(col)
+
+                    except:
+                        continue
+
+            return numeric_cols
+
+        # Détecter toutes les colonnes numériques
+        all_numeric_cols = detect_numeric_columns(df)
+
+        # Colonnes prédéfinies (pour maintenir la compatibilité)
+        predefined_cols = ['Salaire des HS', 'Prime de rendement', "Prime d'ancienneté", 'Prime de poste',
+                           'Prime de Salissure']
+
+        # Nouvelles colonnes détectées automatiquement
+        new_cols = [col for col in all_numeric_cols if col not in predefined_cols]
+
+        # Afficher les nouvelles colonnes détectées
+        if new_cols:
+            cols_info = []
+            for col in new_cols:
+                valid_count = pd.to_numeric(df[col], errors='coerce').notna().sum()
+                total_rows = len(df)
+
+            cols_text = ", ".join(cols_info)
+            st.markdown(f"📊 {cols_text}")
+
+        # Convertir toutes les colonnes numériques
+        all_cols_to_process = predefined_cols + new_cols
+        for col in all_cols_to_process:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
         def safe_sum(df, col):
-            if col in df.columns and df[col].notna().any():
-                return pd.to_numeric(df[col], errors='coerce').sum()
+            """Calcule la somme sécurisée d'une colonne"""
+            if col in df.columns:
+                numeric_series = pd.to_numeric(df[col], errors='coerce')
+                # Retourner la somme même si certaines valeurs sont NaN
+                return numeric_series.sum()  # pandas ignore automatiquement les NaN dans sum()
             else:
                 return 0
 
-        # Calculs principaux - TOTAUX au lieu de moyennes
+        # Calculs principaux - TOTAUX
+        # Colonnes prédéfinies
         total_HS = safe_sum(df, 'Salaire des HS')
         total_prime_rendement = safe_sum(df, 'Prime de rendement')
         total_prime_anciennete = safe_sum(df, "Prime d'ancienneté")
         total_prime_poste = safe_sum(df, 'Prime de poste')
         total_prime_salisseur = safe_sum(df, 'Prime de Salissure')
 
+        # Calculs pour les nouvelles colonnes détectées
+        new_cols_totals = {}
+        for col in new_cols:
+            new_cols_totals[col] = safe_sum(df, col)
+
+        # Total des primes (incluant les nouvelles colonnes)
         total_primes = (
                 total_prime_rendement +
                 total_prime_anciennete +
@@ -168,20 +250,22 @@ def run(df, xls, uploaded_file):
         else:
             total_nb_HS = 0
 
+        # ===== AFFICHAGE DES MÉTRIQUES =====
+        # Première ligne - métriques principales
         col1, col2, col3 = st.columns(3)
 
         with col1:
             st.markdown(f"""
-                            <div class="paie-metric-card card-rendement">
-                                <h3> Nombre total des heures supplémentaires</h3>
-                                <p>{total_nb_HS}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
+                <div class="paie-metric-card card-rendement">
+                    <h3>Nombre total des heures supplémentaires</h3>
+                    <p>{total_nb_HS}</p>
+                </div>
+                """, unsafe_allow_html=True)
 
         with col2:
             st.markdown(f"""
                 <div class="paie-metric-card card-hs">
-                    <h3> Montant Total des heures supplémentaires</h3>
+                    <h3>Montant Total des heures supplémentaires</h3>
                     <p>{total_HS:,.2f} DH</p>
                 </div>
                 """, unsafe_allow_html=True)
@@ -189,76 +273,124 @@ def run(df, xls, uploaded_file):
         with col3:
             st.markdown(f"""
                 <div class="paie-metric-card card-rendement">
-                    <h3> Total Prime de rendement</h3>
+                    <h3>Total Prime de rendement</h3>
                     <p>{total_prime_rendement:,.2f} DH</p>
                 </div>
                 """, unsafe_allow_html=True)
 
-        col4, col5, col6, col7 = st.columns(4)
+        # Deuxième ligne - primes prédéfinies
+        cols_count = 4 + len(new_cols)  # 4 primes prédéfinies + nouvelles colonnes
+        cols = st.columns(min(cols_count, 4))  # Maximum 4 colonnes par ligne
 
-        with col4:
-            st.markdown(f"""
-                <div class="paie-metric-card card-anciennete-prime">
-                    <h3>Total Prime d'ancienneté</h3>
-                    <p>{total_prime_anciennete:,.2f} DH</p>
-                </div>
-                """, unsafe_allow_html=True)
+        predefined_data = [
+            ("Total Prime d'ancienneté", total_prime_anciennete, "card-anciennete-prime"),
+            ("Total Prime de poste", total_prime_poste, "card-poste"),
+            ("Total Prime de Salissure", total_prime_salisseur, "card-rendement"),
+            ("Total de toutes les primes", total_primes, "card-total-primes")
+        ]
 
-        with col5:
-            st.markdown(f"""
-                <div class="paie-metric-card card-poste">
-                    <h3> Total Prime de poste</h3>
-                    <p>{total_prime_poste:,.2f} DH</p>
-                </div>
-                """, unsafe_allow_html=True)
+        for i, (title, value, card_class) in enumerate(predefined_data):
+            with cols[i % len(cols)]:
+                st.markdown(f"""
+                    <div class="paie-metric-card {card_class}">
+                        <h3>{title}</h3>
+                        <p>{value:,.2f} DH</p>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        with col6:
-            st.markdown(f"""
-                <div class="paie-metric-card card-rendement">
-                        <h3> Total Prime de Salissure</h3>
-                        <p>{total_prime_salisseur:,.2f} DH</p>
-                </div>
-                """, unsafe_allow_html=True)
+        # Affichage des nouvelles colonnes détectées
+        if new_cols:
 
-        with col7:
-            st.markdown(f"""
-                            <div class="paie-metric-card card-total-primes">
-                                <h3> Total de toutes les primes</h3>
-                                <p>{total_primes:,.2f} DH</p>
+            # Organiser en lignes de 3 colonnes maximum
+            new_cols_chunked = [new_cols[i:i + 3] for i in range(0, len(new_cols), 3)]
+
+            for chunk in new_cols_chunked:
+                cols_new = st.columns(len(chunk))
+
+                for i, col in enumerate(chunk):
+                    with cols_new[i]:
+                        # Créer un titre formaté
+                        formatted_title = col.replace('_', ' ').title()
+
+                        # Informations sur le remplissage de la colonne
+                        valid_count = pd.to_numeric(df[col], errors='coerce').notna().sum()
+                        total_rows = len(df)
+                        fill_percentage = (valid_count / total_rows) * 100
+
+                        # Déterminer la couleur et le style
+                        if fill_percentage >= 80:
+                            card_class = "card-custom"  # Violet
+                            inline_style = ""
+                        elif fill_percentage >= 50:
+                            card_class = "card-anciennete-prime"  # Bleu
+                            inline_style = ""
+                        elif fill_percentage >= 20:
+                            card_class = ""  # Pas de classe spéciale
+                            inline_style = 'style="background: linear-gradient(135deg, #fdcb6e 0%, #f39c12 100%);"'
+                        else:
+                            card_class = ""
+                            inline_style = 'style="background: linear-gradient(135deg, #ff7675 0%, #d63031 100%);"'
+
+                        # Toujours afficher la carte !
+                        st.markdown(f"""
+                            <div class="paie-metric-card {card_class}" {inline_style}>
+                                <h3>{formatted_title}</h3>
+                                <p>{new_cols_totals[col]:,.2f} DH</p>
+                                <small style="color: #f0f0f0; font-size: 0.8em;">
+                                </small>
                             </div>
-                            """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
 
         def plot_pie_primes_styled(df):
+            """Graphique en camembert des primes (incluant les nouvelles colonnes)"""
+            # Toutes les colonnes de primes (prédéfinies + nouvelles)
             primes = ['Prime de rendement', "Prime d'ancienneté", 'Prime de poste', 'Prime de Salissure']
             primes = [col for col in primes if col in df.columns]
 
             if not primes:
                 st.markdown('<div class="custom-warning">⚠️ Aucune colonne de primes trouvée pour le graphique.</div>',
                             unsafe_allow_html=True)
-                return
+                return None
 
             # Calculer les TOTAUX pour chaque prime
             totaux, labels = [], []
             for col in primes:
                 total = pd.to_numeric(df[col], errors='coerce').sum()
-                if total > 0:
-                    totaux.append(total)
-                    labels.append(col.replace('Prime de ', '').replace("Prime d'", '').title())
+                # Inclure même les colonnes avec total = 0
+                totaux.append(total)
+                # Formatter les labels
+                label = col.replace('Prime de ', '').replace("Prime d'", '').replace('_', ' ').title()
+                labels.append(label)
+
+            # Filtrer seulement les totaux négatifs (cas d'erreur) mais garder les zéros
+            valid_indices = [i for i, total in enumerate(totaux) if total >= 0]
+            totaux = [totaux[i] for i in valid_indices]
+            labels = [labels[i] for i in valid_indices]
 
             if not totaux:
                 st.markdown('<div class="custom-warning">⚠️ Aucune donnée valide pour les primes.</div>',
                             unsafe_allow_html=True)
-                return
+                return None
 
-            st.markdown('<div class="paie-section-header"><h2>📊 Répartition des Primes </h2></div>',
+            # Si tous les totaux sont à 0, afficher un message spécial
+            if all(total == 0 for total in totaux):
+                st.markdown('<div class="custom-info">ℹ️ Toutes les colonnes de primes sont à 0 ou vides.</div>',
+                            unsafe_allow_html=True)
+                # On peut quand même afficher le graphique pour montrer la structure
+                # Remplacer les 0 par de très petites valeurs pour la visualisation
+                totaux = [0.01 if total == 0 else total for total in totaux]
+
+            st.markdown('<div class="paie-section-header"><h2>Répartition des Primes</h2></div>',
                         unsafe_allow_html=True)
 
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
 
-            fig_pr, ax = plt.subplots(figsize=(10, 8))
+            fig_pr, ax = plt.subplots(figsize=(12, 8))
             fig_pr.patch.set_facecolor('#f0f2f6')
 
-            colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a'][:len(totaux)]
+            # Palette de couleurs étendue
+            colors = ['#667eea', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#a29bfe', '#fd79a8', '#fdcb6e', '#00b894',
+                      '#ff7675'][:len(totaux)]
 
             # Pie : % seulement
             wedges, texts, autotexts = ax.pie(
@@ -272,22 +404,18 @@ def run(df, xls, uploaded_file):
                 textprops={'fontsize': 11, 'fontweight': 'bold'}
             )
 
-            # Remplacer les labels pour chaque part
-            for i, text in enumerate(texts):
-                text.set_text(labels[i])
-
             # Rendre % plus visibles
             for autotext in autotexts:
                 autotext.set_color('white')
                 autotext.set_fontweight('bold')
 
-            # Titre avec total général SEUL
+            # Titre avec total général
             ax.set_title(
-                f'Répartition des Primes\nTotal Général: {sum(totaux):,.0f} DH',
+                f'Répartition de Toutes les Primes\nTotal Général: {sum(totaux):,.0f} DH',
                 fontsize=16, fontweight='bold', pad=20
             )
 
-            # Plus de légende détaillée !
+            # Légende détaillée
             ax.legend(labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=10)
 
             plt.tight_layout()
@@ -300,6 +428,9 @@ def run(df, xls, uploaded_file):
         fig_pr = plot_pie_primes_styled(df)
 
         # Fusion Paie & Informations Générales
+        fig_hs = None
+        fig_abs = None
+
         if uploaded_file:
             try:
                 xls = pd.ExcelFile(uploaded_file)
@@ -315,7 +446,7 @@ def run(df, xls, uploaded_file):
                         hs_par_Section = df_merge.groupby('Section')['Heures suppl'].sum().sort_values(ascending=False)
 
                         st.markdown(
-                            '<div class="paie-section-header"><h2>📊 Heures Supplémentaires par Section</h2></div>',
+                            '<div class="paie-section-header"><h2> Heures Supplémentaires par Section</h2></div>',
                             unsafe_allow_html=True)
 
                         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -363,7 +494,7 @@ def run(df, xls, uploaded_file):
 
                         df_merged = pd.merge(df_paie, df_infos[['Noms & Prénoms', 'Section']], on='Noms & Prénoms',
                                              how='left')
-                        fig_abs = None
+
                         # Convertir en numérique
                         df_merged['Nbre Jours'] = pd.to_numeric(df_merged['Nbre Jours'], errors='coerce')
                         df_merged['Jours d\'absences'] = pd.to_numeric(df_merged['Jours d\'absences'], errors='coerce')
@@ -388,7 +519,7 @@ def run(df, xls, uploaded_file):
                                 ascending=False)
 
                             st.markdown(
-                                '<div class="paie-section-header"><h2>📊 Taux d\'Absentéisme par Section</h2></div>',
+                                '<div class="paie-section-header"><h2>Taux d\'Absentéisme par Section</h2></div>',
                                 unsafe_allow_html=True)
 
                             # Métriques d'absentéisme
@@ -419,7 +550,7 @@ def run(df, xls, uploaded_file):
                                 taux_min = absences_Section.min()
                                 st.markdown(f"""
                                     <div class="paie-metric-card" style="background: linear-gradient(135deg, #00b894 0%, #00a085 100%);">
-                                        <h3> Meilleure Section</h3>
+                                        <h3>Meilleure Section</h3>
                                         <p>{section_min}</p>
                                         <small style="color: #fff; font-size: 0.9em;">{taux_min:.1f}%</small>
                                     </div>
@@ -484,32 +615,30 @@ def run(df, xls, uploaded_file):
 
         import io
 
-        # === 1️⃣ DataFrame Statistiques ===
-        df_stats = pd.DataFrame({
-            'Indicateur': [
-                'Nombre total des heures supplémentaires',
-                'Salaire total des HS',
-                'Total Prime de rendement',
-                'Total Prime d\'ancienneté',
-                'Total Prime de poste',
-                'Total Prime de salissure',
-                'Total de toutes les primes',
-                ''
+        # === 1️⃣ DataFrame Statistiques (ÉTENDU) ===
+        stats_data = [
+            ('Nombre total des heures supplémentaires', total_nb_HS),
+            ('Salaire total des HS', f"{total_HS:,.2f} DH"),
+            ('Total Prime de rendement', f"{total_prime_rendement:,.2f} DH"),
+            ('Total Prime d\'ancienneté', f"{total_prime_anciennete:,.2f} DH"),
+            ('Total Prime de poste', f"{total_prime_poste:,.2f} DH"),
+            ('Total Prime de salissure', f"{total_prime_salisseur:,.2f} DH")
+        ]
 
-            ],
-            'Valeur': [
-                total_nb_HS,
-                total_HS,
-                total_prime_rendement,
-                total_prime_anciennete,
-                total_prime_poste,
-                total_prime_salisseur,
-                total_primes,
-                ''
-            ]
+        # Ajouter les nouvelles colonnes aux statistiques
+        for col, total in new_cols_totals.items():
+            formatted_col_name = f"Total {col.replace('_', ' ').title()}"
+            stats_data.append((formatted_col_name, f"{total:,.2f} DH"))
+
+        stats_data.append(('Total de toutes les primes', f"{total_primes:,.2f} DH"))
+        stats_data.append(('', ''))  # Ligne vide
+
+        df_stats = pd.DataFrame({
+            'Indicateur': [item[0] for item in stats_data],
+            'Valeur': [item[1] for item in stats_data]
         })
 
-        # === Calculs ===
+        # === Calculs absentéisme ===
         if absences_Section is not None and not absences_Section.empty:
             taux_global = df_merged['Taux d\'absence (%)'].mean()
             section_max = absences_Section.idxmax()
@@ -548,6 +677,34 @@ def run(df, xls, uploaded_file):
             df.to_excel(writer, sheet_name='Données brutes', index=False)
             df_stats.to_excel(writer, sheet_name='Statistiques', index=False)
 
+            # Ajouter une feuille avec le détail des nouvelles colonnes
+            if new_cols:
+                new_cols_data = []
+                for col in new_cols:
+                    valid_count = pd.to_numeric(df[col], errors='coerce').notna().sum()
+                    total_rows = len(df)
+                    fill_percentage = (valid_count / total_rows) * 100
+                    avg_value = pd.to_numeric(df[col], errors='coerce').mean()
+
+                    new_cols_data.append({
+                        'Nouvelle Colonne': col,
+                        'Total': f"{new_cols_totals[col]:,.2f} DH",
+                        'Nombre d\'entrées valides': valid_count,
+                        'Total des lignes': total_rows,
+                        'Pourcentage de remplissage': f"{fill_percentage:.1f}%",
+                        'Moyenne': f"{avg_value:,.2f} DH" if not pd.isna(avg_value) else "0.00 DH",
+                        'Statut': (
+                            "Optimal (80%+)" if fill_percentage >= 80 else
+                            "Bon (50-79%)" if fill_percentage >= 50 else
+                            "Acceptable (20-49%)" if fill_percentage >= 20 else
+                            "Attention (<20%)" if fill_percentage > 0 else
+                            "Vide (0%)"
+                        )
+                    })
+
+                df_new_cols_detail = pd.DataFrame(new_cols_data)
+                df_new_cols_detail.to_excel(writer, sheet_name='Nouvelles Colonnes', index=False)
+
             # Feuille Graphiques
             workbook = writer.book
             worksheet_graphs = workbook.add_worksheet('Graphiques')
@@ -560,7 +717,7 @@ def run(df, xls, uploaded_file):
             # Sauvegarde en mémoire
             for fig in fig_list:
                 buf = io.BytesIO()
-                fig.savefig(buf, format='png')
+                fig.savefig(buf, format='png', dpi=150, bbox_inches='tight')
                 buf.seek(0)
                 img_bufs.append(buf)
 
@@ -586,12 +743,35 @@ def run(df, xls, uploaded_file):
 
         output.seek(0)
 
+        # Message de résumé avant le téléchargement
+        total_detected = len(new_cols)
+        if total_detected > 0:
+            st.markdown(f"""
+                <div class="custom-success">
+                    <strong>Rapport généré avec succès!</strong><br>
+                     {total_detected} nouvelle(s) colonne(s) numérique(s) détectée(s) et intégrée(s)<br>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+                <div class="custom-info">
+                    📋 <strong>Rapport généré avec les colonnes standards</strong><br>
+                    ℹ️ Aucune nouvelle colonne numérique détectée
+                </div>
+                """, unsafe_allow_html=True)
+
         # Bouton de téléchargement
         st.download_button(
             label="📥 Télécharger le rapport complet",
             data=output,
-            file_name='rapport_paie.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            file_name='rapport_paie_automatique.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            help="Le rapport inclut toutes les colonnes numériques détectées automatiquement"
         )
 
-    process_paie_data(df, uploaded_file)
+
+
+        return df_stats, new_cols_totals
+
+    # Appel de la fonction principale
+    df_stats, new_cols_totals = process_paie_data(df, uploaded_file)
