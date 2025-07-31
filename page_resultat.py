@@ -10,6 +10,7 @@ def run(df):
 
     st.header("📑 Résultat Final & Paiement")
     df_filtered = recherche_employe(df)
+
     # Option : utiliser le DataFrame filtré ou non
     use_filtered = st.checkbox("📊 Utiliser le filtre pour les graphiques", value=False)
     if use_filtered:
@@ -17,7 +18,7 @@ def run(df):
 
     df = df.iloc[:-1, :]
 
-    # CSS pour le style des cartes
+    # CSS pour le style des cartes (inchangé)
     st.markdown("""
          <style>
              .salary-card {
@@ -70,6 +71,16 @@ def run(df):
                  border: 1px solid rgba(255,255,255,0.2);
              }
 
+             .salary-card-custom {
+                 background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+                 padding: 20px;
+                 border-radius: 15px;
+                 margin: 10px 0;
+                 box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                 color: #333;
+                 border: 1px solid rgba(255,255,255,0.2);
+             }
+
              .stat-title {
                  font-size: 24px;
                  font-weight: bold;
@@ -109,8 +120,10 @@ def run(df):
     # ✅ Nettoyage des noms de colonnes
     df.columns = [col.strip() for col in df.columns]
 
-    # ✅ Statistiques par type de salaire
+    # ✅ Statistiques par type de salaire (incluant les colonnes personnalisées)
     stats = {}
+
+    # Colonnes prédéfinies
     cols_with_titles = {
         'Salaire brut': 'Salaire brut',
         'salaire net': 'salaire net',
@@ -123,6 +136,24 @@ def run(df):
         'Salaire net à payer': "salary-card-orange"
     }
 
+    # ✅ MISE À JOUR : Liste complète des colonnes prédéfinies
+    predefined_cols = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Salaire net à payer',
+                       'Avance s/salaire', 'Rbst Prêt', 'Arrondi-', 'Arrondi+', 'Rbst Mutuel', 'Total']
+
+    # ✅ Détecter les nouvelles colonnes numériques créées par l'utilisateur (EXCLUANT les prédéfinies)
+    custom_columns = []
+    for col in df.columns:
+        if col not in predefined_cols:
+            try:
+                # Vérifier si c'est une colonne numérique
+                pd.to_numeric(df[col], errors='raise')
+                custom_columns.append(col)
+                cols_with_titles[col] = col
+                colors[col] = "salary-card-custom"
+            except:
+                continue
+
+    # Afficher les statistiques pour toutes les colonnes
     for col, titre in cols_with_titles.items():
         if col in df.columns:
             serie_num = pd.to_numeric(df[col], errors='coerce')
@@ -163,7 +194,7 @@ def run(df):
             stats[f'{col}_total'] = total
             stats[f'{col}_moyenne'] = moyenne
 
-    # ✅ Avances et prêts
+    # ✅ Avances et prêts (section inchangée)
     col1, col2 = st.columns(2)
 
     with col1:
@@ -174,7 +205,7 @@ def run(df):
 
             st.markdown(f'''
                  <div class="salary-card-purple">
-                     <div class="stat-title"> Avances sur Salaire</div>
+                     <div class="stat-title">Avances sur Salaire</div>
                      <div class="metric-container">
                          <div class="metric-box">
                              <div class="stat-label">Employés concernés</div>
@@ -196,7 +227,7 @@ def run(df):
 
             st.markdown(f'''
                  <div class="salary-card">
-                     <div class="stat-title"> Remboursements Prêts</div>
+                     <div class="stat-title">Remboursements Prêts</div>
                      <div class="metric-container">
                          <div class="metric-box">
                              <div class="stat-label">Employés concernés</div>
@@ -210,9 +241,22 @@ def run(df):
                  </div>
                  ''', unsafe_allow_html=True)
 
-    # ✅ Liste des salariés concernés par avances et prêts
+    # ✅ Tableau des salaires < 3000 DH (section inchangée)
+    if 'Salaire net à payer' in df.columns:
+        salaire_data = pd.to_numeric(df['Salaire net à payer'], errors='coerce')
+        df_faibles_salaires = df[salaire_data < 3000].copy()
+
+        if not df_faibles_salaires.empty:
+            st.subheader(" Employés avec salaire net < 3000 DH ")
+            cols_affichage = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Salaire net à payer'] + custom_columns
+            cols_existants = [c for c in cols_affichage if c in df_faibles_salaires.columns]
+            st.dataframe(df_faibles_salaires[cols_existants], use_container_width=True, height=300)
+
+            st.warning(f" {len(df_faibles_salaires)} employé(s) ont un salaire net inférieur au SMIC (3000 DH)")
+
+    # ✅ Liste des salariés concernés par avances et prêts (avec colonnes personnalisées)
     cols_affichage = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Avance s/salaire', 'Rbst Prêt',
-                      'Salaire net à payer']
+                      'Salaire net à payer'] + custom_columns
     cols_existants = [c for c in cols_affichage if c in df.columns]
 
     # Initialiser les DataFrames vides
@@ -222,17 +266,17 @@ def run(df):
     if 'Avance s/salaire' in df.columns:
         df_avances = df[pd.to_numeric(df['Avance s/salaire'], errors='coerce') > 0]
         if not df_avances.empty:
-            st.subheader("📄 Liste employés avec avances")
+            st.subheader("Liste employés avec avances")
             st.dataframe(df_avances[cols_existants], use_container_width=True, height=400)
 
     if 'Rbst Prêt' in df.columns:
         df_prets = df[pd.to_numeric(df['Rbst Prêt'], errors='coerce') > 0]
         if not df_prets.empty:
-            st.subheader("📄 Liste employés avec prêts")
+            st.subheader( "Liste employés avec prêts")
             st.dataframe(df_prets[cols_existants], use_container_width=True, height=400)
 
     # ========== SECTION GRAPHIQUES ==========
-    st.header("📊 Graphiques d'Analyse")
+    
 
     # Configuration matplotlib pour une meilleure lisibilité
     plt.rcParams.update({
@@ -249,6 +293,9 @@ def run(df):
         'xtick.labelsize': 10,
         'ytick.labelsize': 10
     })
+
+    # ✅ SUPPRESSION : Section des graphiques pour les colonnes personnalisées retirée
+    # Les graphiques ne seront générés que pour les colonnes prédéfinies importantes
 
     # === 1. GRAPHIQUE DES AVANCES ===
     img_avances = io.BytesIO()
@@ -273,14 +320,14 @@ def run(df):
             counts_filtered = [c for c in counts if c > 0]
 
             if counts_filtered:
-                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][:len(counts_filtered)]
+                colors_avances = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4'][:len(counts_filtered)]
 
                 wedges, texts, autotexts = ax_avances.pie(
                     counts_filtered,
                     labels=tranches_filtered,
                     autopct='%1.1f%%',
                     startangle=90,
-                    colors=colors,
+                    colors=colors_avances,
                     textprops={'fontsize': 11, 'weight': 'bold'}
                 )
 
@@ -367,8 +414,7 @@ def run(df):
 
             # Ajouter les nombres d'effectifs à l'intérieur des barres
             for i, (count, patch) in enumerate(zip(n, patches)):
-                if count > 0:  # Afficher seulement si la barre n'est pas vide
-                    # Position du texte au centre de la barre
+                if count > 0:
                     x_pos = (bins[i] + bins[i + 1]) / 2
                     y_pos = count / 2
 
@@ -396,9 +442,9 @@ def run(df):
 
             # Statistiques dans un encadré
             stats_text = (
-                          f'Min: {salaire_net_data.min():,.0f} DH\n'
-                          f'Max: {salaire_net_data.max():,.0f} DH\n'
-                          f'Écart-type: {salaire_net_data.std():,.0f} DH')
+                f'Min: {salaire_net_data.min():,.0f} DH\n'
+                f'Max: {salaire_net_data.max():,.0f} DH\n'
+                f'Écart-type: {salaire_net_data.std():,.0f} DH')
 
             props = dict(boxstyle='round,pad=0.5', facecolor='lightblue', alpha=0.8)
             ax_hist_net.text(0.72, 0.98, stats_text, transform=ax_hist_net.transAxes,
@@ -408,19 +454,6 @@ def run(df):
             st.pyplot(fig_hist_net)
             fig_hist_net.savefig(img_hist_net, format='png', dpi=300, bbox_inches='tight')
             plt.close(fig_hist_net)
-
-    # ✅ Tableau des salaires < 3000 DH
-    if 'Salaire net à payer' in df.columns:
-        salaire_data = pd.to_numeric(df['Salaire net à payer'], errors='coerce')
-        df_faibles_salaires = df[salaire_data < 3000].copy()
-
-        if not df_faibles_salaires.empty:
-            st.subheader("⚠️ Employés avec salaire net < 3000 DH")
-            cols_affichage = ['Noms & Prénoms', 'Salaire brut', 'salaire net', 'Salaire net à payer']
-            cols_existants = [c for c in cols_affichage if c in df_faibles_salaires.columns]
-            st.dataframe(df_faibles_salaires[cols_existants], use_container_width=True, height=300)
-
-            st.warning(f"⚠️ {len(df_faibles_salaires)} employé(s) ont un salaire net <3000 DH")
 
     # === 4. HISTOGRAMME SALAIRE BRUT EN FONCTION DE L'EFFECTIF ===
     img_hist_brut = io.BytesIO()
@@ -445,8 +478,7 @@ def run(df):
 
             # Ajouter les nombres d'effectifs à l'intérieur des barres
             for i, (count, patch) in enumerate(zip(n, patches)):
-                if count > 0:  # Afficher seulement si la barre n'est pas vide
-                    # Position du texte au centre de la barre
+                if count > 0:
                     x_pos = (bins[i] + bins[i + 1]) / 2
                     y_pos = count / 2
 
@@ -472,9 +504,9 @@ def run(df):
 
             # Statistiques dans un encadré
             stats_text = (
-                          f'Min: {salaire_brut_data.min():,.0f} DH\n'
-                          f'Max: {salaire_brut_data.max():,.0f} DH\n'
-                          f'Écart-type: {salaire_brut_data.std():,.0f} DH')
+                f'Min: {salaire_brut_data.min():,.0f} DH\n'
+                f'Max: {salaire_brut_data.max():,.0f} DH\n'
+                f'Écart-type: {salaire_brut_data.std():,.0f} DH')
 
             props = dict(boxstyle='round,pad=0.5', facecolor='lightgreen', alpha=0.8)
             ax_hist_brut.text(0.72, 0.98, stats_text, transform=ax_hist_brut.transAxes,
@@ -485,29 +517,46 @@ def run(df):
             fig_hist_brut.savefig(img_hist_brut, format='png', dpi=300, bbox_inches='tight')
             plt.close(fig_hist_brut)
 
-    # ✅ Générer le Excel avec plusieurs feuilles
-    df_stats = pd.DataFrame([stats])
+    # ✅ SECTION EXPORT - Export direct
+
+    st.header("📥 Export des Données")
+
+    # ✅ Tout le DataFrame d'origine
+    df_export = df.copy()
+
+    # ✅ Générer le Excel avec plusieurs feuilles (version améliorée)
+    df_stats = pd.DataFrame([stats])  # 🟢 Assurez-vous que `stats` existe bien avant
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        # Feuille principale avec toutes les données
+        df_export.to_excel(writer, sheet_name='Données_Complètes', index=False)
+
+        # Feuille des statistiques
         df_stats.to_excel(writer, sheet_name='Statistiques', index=False)
 
+        # Feuilles spécialisées
         if not df_avances.empty:
             df_avances.to_excel(writer, sheet_name='Avances', index=False)
 
         if not df_prets.empty:
             df_prets.to_excel(writer, sheet_name='Prets', index=False)
 
-        # Ajouter le tableau des faibles salaires s'il existe
         if 'df_faibles_salaires' in locals() and not df_faibles_salaires.empty:
             df_faibles_salaires.to_excel(writer, sheet_name='Salaires_Inferieurs_SMIC', index=False)
 
+        # Feuille des colonnes personnalisées
+        if custom_columns:
+            custom_data = df[['Noms & Prénoms'] + [col for col in custom_columns if col in df.columns]].copy()
+            custom_data.to_excel(writer, sheet_name='Colonnes_Personnalisées', index=False)
+
+        # Feuille des graphiques
         workbook = writer.book
         worksheet = workbook.add_worksheet('Graphiques')
         writer.sheets['Graphiques'] = worksheet
 
-        # Insérer les graphiques dans Excel
         row_position = 2
+
         if 'img_avances' in locals() and img_avances.getvalue():
             worksheet.insert_image(f'B{row_position}', 'avances.png', {'image_data': img_avances})
             row_position += 30
@@ -525,10 +574,18 @@ def run(df):
 
     output.seek(0)
 
-    # === ✅ BOUTON DE TÉLÉCHARGEMENT ===
+    # ✅ ✅ ✅ BOUTON DE TÉLÉCHARGEMENT DIRECT
     st.download_button(
-        "📥 Télécharger le fichier Excel complet",
+        "📥 Télécharger Excel complet",
         data=output,
         file_name="rapport_salaire_complet.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+    # ✅ Message d'information sur les colonnes personnalisées (MISE À JOUR)
+    if custom_columns:
+        st.success(f"{len(custom_columns)} colonne(s) détectée(s): {', '.join(custom_columns)}")
+
+    else:
+        st.info(
+            "ℹ️ Aucune colonne personnalisée détectée. Seules les colonnes prédéfinies (Salaire brut, salaire net, Salaire net à payer) sont analysées.")
